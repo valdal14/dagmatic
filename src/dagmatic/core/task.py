@@ -5,6 +5,7 @@ class TaskState(Enum):
     """
     Represents the current execution state of a Task within the DAG.
     """
+
     PENDING = 0
     RUNNING = 1
     SUCCESS = 2
