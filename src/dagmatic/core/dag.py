@@ -1,3 +1,4 @@
+import asyncio
 from collections import deque
 
 from dagmatic.core.task import Task, TaskState
@@ -143,4 +144,73 @@ class DAG:
 
             # Execute only if the flag remained True
             if can_run:
-                current_task.execute()
+                asyncio.run(current_task.execute())
+
+    def get_execution_levels(self) -> list[list[str]]:
+        """
+        Modifies Kahn's Algorithm to return tasks grouped by execution generation.
+        Tasks in the same sub-list are independent and can be executed concurrently.
+        """
+        in_degrees: dict[str, int] = {}
+        levels: list[list[str]] = []
+        queue: deque[str] = deque()
+
+        for task_id, task_obj in self.tasks.items():
+            in_degrees[task_id] = len(task_obj.upstream_ids)
+
+        for task_id, degree in in_degrees.items():
+            if degree == 0:
+                queue.append(task_id)
+
+        while len(queue) > 0:
+            level_size = len(queue)
+            current_level: list[str] = []
+
+            # Process exactly the number of tasks in the current generation
+            for _ in range(level_size):
+                current_id = queue.popleft()
+                current_level.append(current_id)
+
+                current_task = self.tasks.get(current_id)
+                for downstream_id in current_task.downstream_ids:
+                    in_degrees[downstream_id] -= 1
+                    if in_degrees[downstream_id] == 0:
+                        queue.append(downstream_id)
+
+            levels.append(current_level)
+
+        # Cycle Detection Audit
+        flattened = [task for level in levels for task in level]
+        if len(flattened) != len(self.tasks):
+            raise CyclicDependencyError("Cycle detected in DAG. Infinite loop prevented.")
+
+        return levels
+
+    async def execute_async(self) -> None:
+        """
+        Executes the DAG asynchronously by generation.
+        Tasks within the same generation are executed concurrently via the event loop.
+        """
+        levels = self.get_execution_levels()
+
+        for level in levels:
+            tasks_to_run = []
+
+            # Upstream Audit for the entire generation
+            for task_id in level:
+                current_task = self.tasks[task_id]
+                can_run = True
+
+                for upstream_id in current_task.upstream_ids:
+                    upstream_task = self.tasks[upstream_id]
+                    if upstream_task.state in (TaskState.FAILED, TaskState.UPSTREAM_FAILED):
+                        current_task.state = TaskState.UPSTREAM_FAILED
+                        can_run = False
+                        break
+
+                if can_run:
+                    tasks_to_run.append(current_task)
+
+            # Concurrently execute all unblocked tasks in this generation
+            if tasks_to_run:
+                await asyncio.gather(*(task.execute() for task in tasks_to_run))
