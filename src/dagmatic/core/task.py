@@ -1,3 +1,4 @@
+import inspect
 from enum import Enum
 from typing import Any, Callable
 
@@ -66,9 +67,10 @@ class Task:
         """
         self.upstream_ids.add(task_id)
 
-    def execute(self) -> None:
+    async def execute(self) -> None:
         """
         Executes the target callable safely within a state machine wrapper.
+        Handles both synch and async executions.
 
         Transitions the task from PENDING to RUNNING. If successful, transitions
         to SUCCESS. If an exception occurs, catches it, stores the trace in self.error,
@@ -84,7 +86,10 @@ class Task:
 
         try:
             if self.target is not None:
-                self.target(*self.args, **self.kwargs)
+                if inspect.iscoroutinefunction(self.target):
+                    await self.target(*self.args, **self.kwargs)
+                else:
+                    self.target(*self.args, **self.kwargs)
 
             self.state = TaskState.SUCCESS
 
