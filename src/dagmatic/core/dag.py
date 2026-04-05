@@ -1,6 +1,6 @@
 from collections import deque
 
-from dagmatic.core.task import Task
+from dagmatic.core.task import Task, TaskState
 
 
 class CyclicDependencyError(Exception):
@@ -112,3 +112,35 @@ class DAG:
             raise CyclicDependencyError("Cycle detected in DAG. Infinite loop prevented.")
 
         return sorted_execution_order
+
+    def execute(self) -> None:
+        """
+        Executes the DAG synchronously in topologically sorted order.
+
+        Handles cascade failures by auditing upstream dependencies before execution.
+        If any upstream dependency has failed, the current task is marked as
+        UPSTREAM_FAILED and skipped.
+        """
+        sorted_task_ids = self.validate_and_sort()
+
+        for task_id in sorted_task_ids:
+            current_task = self.tasks[task_id]
+
+            # Initialize the Flag
+            # Assume it is safe to run unless we find a failed upstream task
+            can_run = True
+
+            # Upstream Audit
+            for upstream_id in current_task.upstream_ids:
+                upstream_task = self.tasks[upstream_id]
+
+                # If the upstream task failed, or was skipped itself.
+                if upstream_task.state in (TaskState.FAILED, TaskState.UPSTREAM_FAILED):
+                    current_task.state = TaskState.UPSTREAM_FAILED
+                    can_run = False
+                    # Stop checking other dependencies, we already know this task can't run
+                    break
+
+            # Execute only if the flag remained True
+            if can_run:
+                current_task.execute()

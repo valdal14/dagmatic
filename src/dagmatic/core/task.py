@@ -11,6 +11,7 @@ class TaskState(Enum):
     RUNNING = 1
     SUCCESS = 2
     FAILED = 3
+    UPSTREAM_FAILED = 4
 
 
 class Task:
