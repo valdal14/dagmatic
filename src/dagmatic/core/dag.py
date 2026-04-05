@@ -139,7 +139,7 @@ class DAG:
                     current_task.state = TaskState.UPSTREAM_FAILED
                     can_run = False
                     # Stop checking other dependencies, we already know this task can't run
-                    break  
+                    break
 
             # Execute only if the flag remained True
             if can_run:
